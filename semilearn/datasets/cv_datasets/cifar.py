@@ -70,14 +70,24 @@ def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', inclu
                                                                 ulb_imbalance_ratio=args.ulb_imb_ratio,
                                                                 include_lb_to_ulb=include_lb_to_ulb)
     
+    if args.use_noise:
+        noise_path = args.noise_path
+        ulb_data = np.load(noise_path)
+        noise_name = noise_path.split('/')[-3].split('.')[0]
+        filter_method = noise_path.split('/')[-2]
+
+    breakpoint()
+
     lb_count = [0 for _ in range(num_classes)]
     ulb_count = [0 for _ in range(num_classes)]
     for c in lb_targets:
         lb_count[c] += 1
     for c in ulb_targets:
-        ulb_count[c] += 1
+        if c >= 0 and c < num_classes:
+            ulb_count[c] += 1
     print("lb count: {}".format(lb_count))
-    print("ulb count: {}".format(ulb_count))
+    print("ulb count: {}".format(ulb_count + [(ulb_targets == -1).sum()]))
+    print("OOD unlabeled images: {}".format((ulb_targets == -1).sum()))
     # lb_count = lb_count / lb_count.sum()
     # ulb_count = ulb_count / ulb_count.sum()
     # args.lb_class_dist = lb_count
