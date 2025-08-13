@@ -7,12 +7,12 @@ overwrite: True
 use_tensorboard: True
 use_wandb: False
 epoch: 200
-num_train_iter: 204800
-num_log_iter: 256
-num_eval_iter: 2048
-batch_size: 8
+num_train_iter: 25600
+num_log_iter: 32
+num_eval_iter: 256
+batch_size: 64
 eval_batch_size: 16
-num_warmup_iter: 5120
+num_warmup_iter: 640
 num_labels: 400
 uratio: 1
 ema_m: 0.0

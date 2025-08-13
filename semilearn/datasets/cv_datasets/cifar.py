@@ -86,7 +86,7 @@ def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', inclu
 
             noise_name = f"{noise_path.split('/')[-1].split('.')[0]}_{noise_number}"
 
-
+    noise_name = "None"
     lb_count = [0 for _ in range(num_classes)]
     ulb_count = [0 for _ in range(num_classes)]
     for c in lb_targets:
