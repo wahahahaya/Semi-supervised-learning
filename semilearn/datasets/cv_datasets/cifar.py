@@ -81,8 +81,12 @@ def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', inclu
             noise_path = args.noise_path 
             noise_data = np.load(noise_path)
             noise_number = args.noise_num
-            ulb_data = np.concatenate([ulb_data, noise_data[:noise_number]], axis=0)
-            ulb_targets = np.concatenate([ulb_targets, -1 * np.ones(noise_number)], axis=0).astype(int)
+            if noise_number == 0:
+                ulb_data = noise_data
+                ulb_targets = -1 * np.ones(noise_data.shape[0])
+            else:
+                ulb_data = np.concatenate([ulb_data, noise_data[:noise_number]], axis=0)
+                ulb_targets = np.concatenate([ulb_targets, -1 * np.ones(noise_number)], axis=0).astype(int)
 
             noise_name = f"{noise_path.split('/')[-1].split('.')[0]}_{noise_number}"
 
