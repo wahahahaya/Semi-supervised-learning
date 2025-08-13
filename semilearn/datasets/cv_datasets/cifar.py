@@ -72,11 +72,12 @@ def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', inclu
     
     if args.use_noise:
         noise_path = args.noise_path
+        # noise path --> load noise --> combine ulb + noise 
         ulb_data = np.load(noise_path)
         noise_name = noise_path.split('/')[-3].split('.')[0]
         filter_method = noise_path.split('/')[-2]
 
-    breakpoint()
+
 
     lb_count = [0 for _ in range(num_classes)]
     ulb_count = [0 for _ in range(num_classes)]
