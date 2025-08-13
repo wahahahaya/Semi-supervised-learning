@@ -1,8 +1,5 @@
 algorithm: fixmatch
-save_dir: ./saved_models/usb_cv/
-save_name: fixmatch_cifar100_200_0
 resume: True
-load_path: ./saved_models/usb_cv//fixmatch_cifar100_200_0/latest_model.pth
 overwrite: True
 use_tensorboard: True
 use_wandb: False

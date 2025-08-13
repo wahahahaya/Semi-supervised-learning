@@ -71,24 +71,41 @@ def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', inclu
                                                                 include_lb_to_ulb=include_lb_to_ulb)
     
     if args.use_noise:
-        noise_path = args.noise_path
-        # noise path --> load noise --> combine ulb + noise 
-        ulb_data = np.load(noise_path)
-        noise_name = noise_path.split('/')[-3].split('.')[0]
-        filter_method = noise_path.split('/')[-2]
+        if args.use_filter:
+            noise_path = args.noise_path
+            ulb_data = np.load(noise_path+ '/filtered_images.npy')
+            ulb_targets = np.load(noise_path + '/filtered_labels.npy').astype(int)
 
+            noise_name = f"{noise_path.split('/')[-1].split('.')[0]}"
+        else:
+            noise_path = args.noise_path 
+            noise_data = np.load(noise_path)
+            noise_number = args.noise_num
+            ulb_data = np.concatenate([ulb_data, noise_data[:noise_number]], axis=0)
+            ulb_targets = np.concatenate([ulb_targets, -1 * np.ones(noise_number)], axis=0).astype(int)
+
+            noise_name = f"{noise_path.split('/')[-1].split('.')[0]}_{noise_number}"
 
 
     lb_count = [0 for _ in range(num_classes)]
     ulb_count = [0 for _ in range(num_classes)]
     for c in lb_targets:
         lb_count[c] += 1
-    for c in ulb_targets:
-        if c >= 0 and c < num_classes:
-            ulb_count[c] += 1
+    for c in ulb_targets[ulb_targets != -1]:
+        ulb_count[c] += 1
     print("lb count: {}".format(lb_count))
-    print("ulb count: {}".format(ulb_count + [(ulb_targets == -1).sum()]))
+    print("ulb count: {}".format(ulb_count))
     print("OOD unlabeled images: {}".format((ulb_targets == -1).sum()))
+
+    save_dir = os.path.join(args.save_dir, args.save_name)
+
+    with open(os.path.join(save_dir, f'{noise_name}.txt'), 'w') as f:
+        f.write("Dataset: {}\n".format(noise_name))
+        f.write("lb_count: {}\n".format(lb_count))
+        f.write("ulb_count: {}\n".format(ulb_count + [(ulb_targets == -1).sum()]))
+        f.write("OOD unlabeled images: {}\n".format((ulb_targets == -1).sum()))
+        f.close()
+
     # lb_count = lb_count / lb_count.sum()
     # ulb_count = ulb_count / ulb_count.sum()
     # args.lb_class_dist = lb_count

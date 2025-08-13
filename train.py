@@ -197,6 +197,9 @@ def get_config():
     parser.add_argument(
         "--noise_num", type=int, default=0, help="number of noise samples"
     )
+    parser.add_argument(
+        "--use_filter", type=str2bool, default=False, help="use filtered noise dataset"
+    )
 
     """
     multi-GPUs & Distributed Training
