@@ -1,8 +1,5 @@
 algorithm: vat
-save_dir: ./saved_models/usb_cv/
-save_name: vat_cifar100_400_0
 resume: True
-load_path: ./saved_models/usb_cv//vat_cifar100_400_0/latest_model.pth
 overwrite: True
 use_tensorboard: True
 use_wandb: False
@@ -36,7 +33,7 @@ num_workers: 4
 seed: 0
 world_size: 1
 rank: 0
-multiprocessing_distributed: True
+multiprocessing_distributed: False
 dist_url: tcp://127.0.0.1:10051
 dist_backend: nccl
 gpu: None
