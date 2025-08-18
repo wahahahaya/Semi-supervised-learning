@@ -73,8 +73,8 @@ def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', inclu
     if args.use_noise:
         if args.use_filter:
             noise_path = args.noise_path
-            ulb_data = np.load(noise_path+ '/filtered_images.npy')
-            ulb_targets = np.load(noise_path + '/filtered_labels.npy').astype(int)
+            ulb_data = np.load(f'{noise_path}_filtered_images.npy')
+            ulb_targets = np.load(f'{noise_path}_filtered_labels.npy').astype(int)
 
             noise_name = f"{noise_path.split('/')[-1].split('.')[0]}"
         else:
