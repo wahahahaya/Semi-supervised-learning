@@ -25,7 +25,7 @@ def get_json_dset(args, alg='fixmatch', dataset='acmIb', num_labels=40, num_clas
             BasicDataset (for labeled data), BasicDataset (for unlabeled data)
         """
         json_dir = os.path.join(data_dir, dataset)
-        
+
         # Supervised top line using all data as labeled data.
         with open(os.path.join(json_dir,'train.json'),'r') as json_data:
             train_data = json.load(json_data)
