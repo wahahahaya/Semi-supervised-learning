@@ -61,6 +61,19 @@ def get_json_dset(args, alg='fixmatch', dataset='acmIb', num_labels=40, num_clas
                                                                     ulb_imbalance_ratio=args.ulb_imb_ratio,
                                                                     include_lb_to_ulb=include_lb_to_ulb)
         # 補 noise
+        if args.use_noise:
+            noise_path = args.noise_path
+            with open(noise_path,'r') as json_data:
+                noise_data = json.load(json_data)
+                noise_sen_list = []
+                for idx in noise_data:
+                    noise_sen_list.append((noise_data[idx]['ori'],noise_data[idx]['aug_0'],noise_data[idx]['aug_1']))
+            noise_num = args.noise_num
+            noise_sen_array = np.array(noise_sen_list)
+            noise_label_array = np.full(len(noise_sen_list), -1)
+            ulb_sen_list = np.concatenate([ulb_sen_list, noise_sen_array[:noise_num]], axis=0)
+            ulb_label_list = np.concatenate([ulb_label_list, noise_label_array[:noise_num]], axis=0)
+            # 補 filter
 
         # output the distribution of labeled data for remixmatch
         count = [0 for _ in range(num_classes)]
