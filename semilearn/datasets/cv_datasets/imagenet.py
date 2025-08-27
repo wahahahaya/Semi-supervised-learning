@@ -81,8 +81,28 @@ def get_imagenet(args, alg, name, num_labels, num_classes, data_dir='./data', in
     ])
 
     data_dir = os.path.join(data_dir, name.lower())
+    """
+    train:
+        dataset_class: ImglistDataset
+        data_dir: ./data/images_largescale/
+        imglist_pth: ./data/benchmark_imglist/imagenet200/train_imagenet200.txt
+        batch_size: 256
+        shuffle: True
+    val:
+        dataset_class: ImglistDataset
+        data_dir: ./data/images_largescale/
+        imglist_pth: ./data/benchmark_imglist/imagenet200/val_imagenet200.txt
+        batch_size: 256
+        shuffle: False
+    test:
+        dataset_class: ImglistDataset
+        data_dir: ./data/images_largescale/
+        imglist_pth: ./data/benchmark_imglist/imagenet200/test_imagenet200.txt
+        batch_size: 256
+        shuffle: False
+    """
 
-    dataset = ImagenetDataset(root=os.path.join(data_dir, "train"), transform=transform_weak, ulb=False, alg=alg)
+    dataset = ImagenetDataset(root='/home/arlenchen/SSL_data_filtering/OpenOOD/data/images_largescale', transform=transform_weak, ulb=False, alg=alg, imglist_pth='/home/arlenchen/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet200/train_imagenet200.txt')
     percentage = num_labels / len(dataset)
 
     lb_dset = ImagenetDataset(root=os.path.join(data_dir, "train"), transform=transform_weak, ulb=False, alg=alg, percentage=percentage)
@@ -96,7 +116,7 @@ def get_imagenet(args, alg, name, num_labels, num_classes, data_dir='./data', in
 
 
 class ImagenetDataset(BasicDataset, ImageFolder):
-    def __init__(self, root, transform, ulb, alg, medium_transform=None, strong_transform=None, percentage=-1, include_lb_to_ulb=True, lb_index=None):
+    def __init__(self, root, transform, ulb, alg, imglist_pth=None, medium_transform=None, strong_transform=None, percentage=-1, include_lb_to_ulb=True, lb_index=None):
         self.alg = alg
         self.is_ulb = ulb
         self.percentage = percentage
@@ -105,23 +125,36 @@ class ImagenetDataset(BasicDataset, ImageFolder):
         self.include_lb_to_ulb = include_lb_to_ulb
         self.lb_index = lb_index
 
-        is_valid_file = None
-        extensions = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp')
-        classes, class_to_idx = self.find_classes(self.root)
-        samples = self.make_dataset(self.root, class_to_idx, extensions, is_valid_file)
+        if imglist_pth is not None:
+            samples = self._make_dataset_from_list(imglist_pth)
+        else:
+            raise ValueError("You must provide imglist_pth for ImagenetDataset")
+        
         if len(samples) == 0:
-            msg = "Found 0 files in subfolders of: {}\n".format(self.root)
-            if extensions is not None:
-                msg += "Supported extensions are: {}".format(",".join(extensions))
-            raise RuntimeError(msg)
-
-        self.loader = default_loader
-        self.extensions = extensions
-
-        self.classes = classes
-        self.class_to_idx = class_to_idx
+            raise RuntimeError(f"Found 0 samples in {imglist_pth}")
+        
         self.data = [s[0] for s in samples]
         self.targets = [s[1] for s in samples]
+
+        breakpoint()
+
+        # is_valid_file = None
+        # extensions = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp')
+        # classes, class_to_idx = self.find_classes(self.root)
+        # samples = self.make_dataset(self.root, class_to_idx, extensions, is_valid_file)
+        # if len(samples) == 0:
+        #     msg = "Found 0 files in subfolders of: {}\n".format(self.root)
+        #     if extensions is not None:
+        #         msg += "Supported extensions are: {}".format(",".join(extensions))
+        #     raise RuntimeError(msg)
+
+        # self.loader = default_loader
+        # self.extensions = extensions
+
+        # self.classes = classes
+        # self.class_to_idx = class_to_idx
+        # self.data = [s[0] for s in samples]
+        # self.targets = [s[1] for s in samples]
 
         self.medium_transform = medium_transform
         if self.medium_transform is None:
@@ -178,5 +211,31 @@ class ImagenetDataset(BasicDataset, ImageFolder):
                         instances.append(item)
         gc.collect()
         self.lb_idx = lb_idx
+        return instances
+    
+    def _make_dataset_from_list(self, imglist_pth):
+        """
+        txt file may like:
+        'imagenet_1k/train/n04372370/n04372370_9138.JPEG 844\n'
+        """
+        instances = []
+        with open(imglist_pth, 'r') as f:
+            lines = f.readlines()
+
+        random.shuffle(lines)
+
+        if self.percentage > 0:
+            lines = lines[:int(len(lines) * self.percentage)]
+
+        for line in lines:
+            path, target = line.strip().split()
+            full_path = os.path.join(self.root, path)
+            target = int(target)
+            if os.path.isfile(full_path):
+                instances.append((full_path, target))
+
+            breakpoint()
+        
+        gc.collect()
         return instances
 

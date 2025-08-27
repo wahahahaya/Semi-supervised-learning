@@ -317,9 +317,9 @@ def exp_usb_cv(label_amount):
         "softmatch",
         "defixmatch",
     ]
-    datasets = ["cifar100", "eurosat", "semi_aves", "tissuemnist", "stl10"]
+    # datasets = ["cifar100", "eurosat", "semi_aves", "tissuemnist", "stl10"]
     # algs = ['fixmatch', 'flexmatch', 'comatch', 'simmatch']
-    # datasets = ['imagenet']
+    datasets = ['imagenet']
     # seeds = [0, 1, 2]  # 1, 22, 333
     seeds = [0]
 
@@ -426,7 +426,7 @@ def exp_usb_cv(label_amount):
                     layer_decay = 0.95
 
                 elif dataset == "imagenet":
-                    net = "vit_base_path16_224"
+                    net = "vit_small_patch16_224"
                     pretrain_name = "mae_pretrain_vit_base.pth"
                     num_classes = 1000
                     num_labels = 100000  # 128000
@@ -436,6 +436,7 @@ def exp_usb_cv(label_amount):
                     amp = True
                     img_size = 224
                     crop_ratio = 0.875
+                    layer_decay = 0.75 # 不確定 chatgpt 說常用為 0.65 0.75
 
                 port = dist_port[count]
                 # prepare the configuration file
