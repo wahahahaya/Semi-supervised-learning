@@ -33,7 +33,7 @@ dataset: yelp_review
 train_sampler: RandomSampler
 num_classes: 5
 num_workers: 4
-max_length: 512
+max_length: 128
 seed: 0
 world_size: 1
 rank: 0
