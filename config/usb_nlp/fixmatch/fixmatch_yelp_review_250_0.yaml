@@ -5,11 +5,11 @@ use_tensorboard: True
 use_wandb: False
 epoch: 100
 num_train_iter: 25600
-num_warmup_iter: 1280
+num_warmup_iter: 5120
 num_log_iter: 64
-num_eval_iter: 512
+num_eval_iter: 128
 num_labels: 250
-batch_size: 32
+batch_size: 64
 eval_batch_size: 32
 ema_m: 0.0
 hard_label: True
@@ -19,9 +19,9 @@ ulb_loss_ratio: 1.0
 uratio: 1
 use_cat: False
 optim: AdamW
-lr: 5e-7
+lr: 2e-5
 momentum: 0.9
-weight_decay: 0.0005
+weight_decay: 0.01
 layer_decay: 0.75
 amp: False
 clip: 0.0
