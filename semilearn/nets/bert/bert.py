@@ -3,7 +3,7 @@
 
 import torch
 import torch.nn as nn
-from transformers import BertModel
+from transformers import BertModel, BertConfig
 import os
 
 class ClassificationBert(nn.Module):
