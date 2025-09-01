@@ -27,7 +27,7 @@ weight_decay: 0.01
 amp: True
 clip: 0.0
 use_cat: True
-net: vit_small_patch16_224
+net: vit_base_patch16_224
 net_from_name: False
 data_dir: ./data
 dataset: imagenet

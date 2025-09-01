@@ -101,15 +101,17 @@ def get_imagenet(args, alg, name, num_labels, num_classes, data_dir='./data', in
         batch_size: 256
         shuffle: False
     """
-
-    dataset = ImagenetDataset(root='/home/arlenchen/SSL_data_filtering/OpenOOD/data/images_largescale', transform=transform_weak, ulb=False, alg=alg, imglist_pth='/home/arlenchen/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet200/train_imagenet200.txt')
+    train_imglist = '/home/ubuntu/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet/train_imagenet.txt'
+    val_imglist = '/home/ubuntu/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet/val_imagenet.txt'
+    root_imgpath = '/ephemeral'
+    dataset = ImagenetDataset(root=root_imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist)
     percentage = num_labels / len(dataset)
 
-    lb_dset = ImagenetDataset(root=os.path.join(data_dir, "train"), transform=transform_weak, ulb=False, alg=alg, percentage=percentage)
+    lb_dset = ImagenetDataset(root=root_imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist, percentage=percentage)
 
-    ulb_dset = ImagenetDataset(root=os.path.join(data_dir, "train"), transform=transform_weak, alg=alg, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
+    ulb_dset = ImagenetDataset(root=root_imgpath, transform=transform_weak, alg=alg, imglist_pth=train_imglist, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
 
-    eval_dset = ImagenetDataset(root=os.path.join(data_dir, "val"), transform=transform_val, alg=alg, ulb=False)
+    eval_dset = ImagenetDataset(root=root_imgpath, transform=transform_val, alg=alg, imglist_pth=val_imglist, ulb=False)
 
     return lb_dset, ulb_dset, eval_dset
     
@@ -129,32 +131,19 @@ class ImagenetDataset(BasicDataset, ImageFolder):
             samples = self._make_dataset_from_list(imglist_pth)
         else:
             raise ValueError("You must provide imglist_pth for ImagenetDataset")
-        
+
         if len(samples) == 0:
             raise RuntimeError(f"Found 0 samples in {imglist_pth}")
         
         self.data = [s[0] for s in samples]
         self.targets = [s[1] for s in samples]
 
-        breakpoint()
+        self.loader = default_loader
 
-        # is_valid_file = None
-        # extensions = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp')
-        # classes, class_to_idx = self.find_classes(self.root)
-        # samples = self.make_dataset(self.root, class_to_idx, extensions, is_valid_file)
-        # if len(samples) == 0:
-        #     msg = "Found 0 files in subfolders of: {}\n".format(self.root)
-        #     if extensions is not None:
-        #         msg += "Supported extensions are: {}".format(",".join(extensions))
-        #     raise RuntimeError(msg)
+        classes, class_to_idx = self.find_classes(self.root)
+        self.classes = classes
+        self.class_to_idx = class_to_idx
 
-        # self.loader = default_loader
-        # self.extensions = extensions
-
-        # self.classes = classes
-        # self.class_to_idx = class_to_idx
-        # self.data = [s[0] for s in samples]
-        # self.targets = [s[1] for s in samples]
 
         self.medium_transform = medium_transform
         if self.medium_transform is None:
@@ -172,46 +161,6 @@ class ImagenetDataset(BasicDataset, ImageFolder):
         target = self.targets[index]
         return sample, target
 
-    def make_dataset(
-            self,
-            directory,
-            class_to_idx,
-            extensions=None,
-            is_valid_file=None,
-    ):
-        instances = []
-        directory = os.path.expanduser(directory)
-        both_none = extensions is None and is_valid_file is None
-        both_something = extensions is not None and is_valid_file is not None
-        if both_none or both_something:
-            raise ValueError("Both extensions and is_valid_file cannot be None or not None at the same time")
-        if extensions is not None:
-            def is_valid_file(x: str) -> bool:
-                return x.lower().endswith(extensions)
-        
-        lb_idx = {}
-        for target_class in sorted(class_to_idx.keys()):
-            class_index = class_to_idx[target_class]
-            target_dir = os.path.join(directory, target_class)
-            if not os.path.isdir(target_dir):
-                continue
-            for root, _, fnames in sorted(os.walk(target_dir, followlinks=True)):
-                random.shuffle(fnames)
-                if self.percentage != -1:
-                    fnames = fnames[:int(len(fnames) * self.percentage)]
-                if self.percentage != -1:
-                    lb_idx[target_class] = fnames
-                for fname in fnames:
-                    if not self.include_lb_to_ulb:
-                        if fname in self.lb_index[target_class]:
-                            continue
-                    path = os.path.join(root, fname)
-                    if is_valid_file(path):
-                        item = path, class_index
-                        instances.append(item)
-        gc.collect()
-        self.lb_idx = lb_idx
-        return instances
     
     def _make_dataset_from_list(self, imglist_pth):
         """
@@ -219,23 +168,32 @@ class ImagenetDataset(BasicDataset, ImageFolder):
         'imagenet_1k/train/n04372370/n04372370_9138.JPEG 844\n'
         """
         instances = []
+        lb_idx = {} 
+
         with open(imglist_pth, 'r') as f:
             lines = f.readlines()
 
         random.shuffle(lines)
 
         if self.percentage > 0:
-            lines = lines[:int(len(lines) * self.percentage)]
+            k = max(1, int(len(lines) * self.percentage))
+            lines = lines[:k]
 
         for line in lines:
             path, target = line.strip().split()
             full_path = os.path.join(self.root, path)
             target = int(target)
+
             if os.path.isfile(full_path):
                 instances.append((full_path, target))
+                class_id = int(target)
+                fname = os.path.basename(full_path)
+                if class_id not in lb_idx:
+                    lb_idx[class_id] = []
+                lb_idx[class_id].append(fname)
 
-            breakpoint()
-        
         gc.collect()
+        self.lb_idx = lb_idx
         return instances
+
 
