@@ -1,6 +1,8 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+# fixmatch, flexmatch, pseudolabel, vat
+
 import os
 import gc
 import copy
@@ -81,47 +83,65 @@ def get_imagenet(args, alg, name, num_labels, num_classes, data_dir='./data', in
     ])
 
     data_dir = os.path.join(data_dir, name.lower())
-    """
-    train:
-        dataset_class: ImglistDataset
-        data_dir: ./data/images_largescale/
-        imglist_pth: ./data/benchmark_imglist/imagenet200/train_imagenet200.txt
-        batch_size: 256
-        shuffle: True
-    val:
-        dataset_class: ImglistDataset
-        data_dir: ./data/images_largescale/
-        imglist_pth: ./data/benchmark_imglist/imagenet200/val_imagenet200.txt
-        batch_size: 256
-        shuffle: False
-    test:
-        dataset_class: ImglistDataset
-        data_dir: ./data/images_largescale/
-        imglist_pth: ./data/benchmark_imglist/imagenet200/test_imagenet200.txt
-        batch_size: 256
-        shuffle: False
-    """
-    train_imglist = '/home/ubuntu/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet/train_imagenet.txt'
-    val_imglist = '/home/ubuntu/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet/val_imagenet.txt'
-    root_imgpath = '/ephemeral'
-    dataset = ImagenetDataset(root=root_imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist)
-    percentage = num_labels / len(dataset)
 
-    lb_dset = ImagenetDataset(root=root_imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist, percentage=percentage)
+    train_imglist = '/home/arlenchen/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet200/train_imagenet200.txt'
+    val_imglist = '/home/arlenchen/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet200/val_imagenet200.txt'
+    train_imgpath = '/raid/arlen_dataset/imagenet/'
+    dataset = ImagenetDataset(root=train_imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist)
+    label_perclass = num_labels // (max(dataset.targets)+1)
 
-    ulb_dset = ImagenetDataset(root=root_imgpath, transform=transform_weak, alg=alg, imglist_pth=train_imglist, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
+    lb_dset = ImagenetDataset(root=train_imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist, label_perclass=label_perclass)
 
-    eval_dset = ImagenetDataset(root=root_imgpath, transform=transform_val, alg=alg, imglist_pth=val_imglist, ulb=False)
+    ulb_dset = ImagenetDataset(root=train_imgpath, transform=transform_weak, alg=alg, imglist_pth=train_imglist, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
 
+    val_imgpath = '/home/arlenchen/SSL_data_filtering/OpenOOD/data/images_largescale'
+    eval_dset = ImagenetDataset(root=val_imgpath, transform=transform_val, alg=alg, imglist_pth=val_imglist, ulb=False)
+
+    lb_count = [0 for _ in range(num_classes)]
+    ulb_count = [0 for _ in range(num_classes)]
+    ood_count = 0
+    for lb in lb_dset.targets:
+        lb_count[lb] += 1
+    for ulb in ulb_dset.targets:
+        if ulb >= 0:
+            ulb_count[ulb] += 1
+        if ulb == -1:
+            ood_count += 1
+    save_dir = os.path.join(args.save_dir, args.save_name)
+    noise_name = "None"
+    with open(os.path.join(save_dir, f'{noise_name}.txt'), 'w') as f:
+        f.write("Dataset: {}\n".format(noise_name))
+        f.write("lb_count: {}\n".format(lb_count))
+        f.write("ulb_count: {}\n".format(ulb_count + [ood_count]))
+        f.write("OOD unlabeled images: {}\n".format(ood_count))
+        f.close()
+
+
+    # noise_imglist = '/home/arlenchen/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet/test_ninco.txt'
+    # if args.use_noise:
+    #     noise_number = args.noise_num
+    #     noise_path = args.noise_path
+    #     noise_dset = OODImageListDataset(
+    #         root=noise_path,
+    #         imglist_pth=noise_imglist,
+    #         transform=transform_weak, alg=alg, ulb=True,
+    #         medium_transform=transform_medium, strong_transform=transform_strong,
+    #         percentage=noise_number, seed=42
+    #     )
+
+    #     ulb_dset.data.extend(noise_dset.data)
+    #     ulb_dset.targets.extend(noise_dset.targets)
+
+    # breakpoint()
     return lb_dset, ulb_dset, eval_dset
     
 
 
 class ImagenetDataset(BasicDataset, ImageFolder):
-    def __init__(self, root, transform, ulb, alg, imglist_pth=None, medium_transform=None, strong_transform=None, percentage=-1, include_lb_to_ulb=True, lb_index=None):
+    def __init__(self, root, transform, ulb, alg, imglist_pth=None, medium_transform=None, strong_transform=None, label_perclass=-1, include_lb_to_ulb=True, lb_index=None):
         self.alg = alg
         self.is_ulb = ulb
-        self.percentage = percentage
+        self.label_perclass = label_perclass
         self.transform = transform
         self.root = root
         self.include_lb_to_ulb = include_lb_to_ulb
@@ -168,32 +188,91 @@ class ImagenetDataset(BasicDataset, ImageFolder):
         'imagenet_1k/train/n04372370/n04372370_9138.JPEG 844\n'
         """
         instances = []
-        lb_idx = {} 
+        buckets = {} 
 
         with open(imglist_pth, 'r') as f:
-            lines = f.readlines()
-
-        random.shuffle(lines)
-
-        if self.percentage > 0:
-            k = max(1, int(len(lines) * self.percentage))
-            lines = lines[:k]
+            lines = [ln.strip() for ln in f if ln.strip()]
 
         for line in lines:
-            path, target = line.strip().split()
-            full_path = os.path.join(self.root, path)
+            path, target = line.split()
             target = int(target)
-
+            full_path = os.path.join(self.root, path)
             if os.path.isfile(full_path):
-                instances.append((full_path, target))
-                class_id = int(target)
-                fname = os.path.basename(full_path)
-                if class_id not in lb_idx:
-                    lb_idx[class_id] = []
-                lb_idx[class_id].append(fname)
+                buckets.setdefault(target, []).append((full_path, target))
+
+        lb_idx = {}
+        if self.label_perclass > 0 and not self.is_ulb:
+            for cls, items in buckets.items():
+                k = min(self.label_perclass, len(items))
+                chosen = random.sample(items, k)
+                instances.extend(chosen)
+                lb_idx[cls] = [os.path.basename(p) for p, _ in chosen]
+        else:
+            for cls, items in buckets.items():
+                instances.extend(items)
+            lb_idx = {}
 
         gc.collect()
         self.lb_idx = lb_idx
         return instances
 
+class OODImageListDataset(BasicDataset):
+    """
+    從 imglist 讀取 OOD 影像, target 固定為 -1。
+    - 支援 percentage(cap OOD 池大小)
+    - __sample__ 用隨機索引以實現 with-replacement
+    """
+    def __init__(self, root, imglist_pth, transform, alg,
+                 ulb=True, medium_transform=None, strong_transform=None,
+                 percentage=-1, seed=42):
+        self.alg = alg
+        self.is_ulb = ulb
+        self.transform = transform
+        self.root = root
+        self.rng = random.Random(seed)
+        percentage = percentage / 10 if percentage > 1 else percentage
+
+        # 讀清單
+        with open(imglist_pth, 'r') as f:
+            lines = [ln.strip() for ln in f if ln.strip()]
+        breakpoint()
+
+        # 可選 cap（以比例或以實數剪裁，這裡用比例）
+        if percentage is not None and percentage > 0:
+            k = max(1, int(len(lines) * percentage))
+            lines = lines[:k]
+
+        # 儲存 full paths；目標全 -1
+        self.data = []
+        for ln in lines:
+            parts = ln.split()
+            rel = parts[0]
+            full = os.path.join(root, rel)
+            if os.path.isfile(full):
+                self.data.append(full)
+
+        if len(self.data) == 0:
+            raise RuntimeError(f"Found 0 OOD samples in {imglist_pth}")
+
+        self.targets = [-1] * len(self.data)
+
+        # loader 與增強
+        self.loader = default_loader
+        self.medium_transform = medium_transform
+        self.strong_transform = strong_transform
+        if self.medium_transform is None or self.strong_transform is None:
+            # 對於半監督 ULB，我們預設需要 medium/strong
+            assert self.alg not in ['fullysupervised', 'supervised'], "ULB requires medium/strong transforms"
+
+    def __len__(self):
+        # 真正長度可用於估算，但我們在 __sample__ 走隨機（with-replacement）
+        return len(self.data)
+
+    def __sample__(self, index):
+        # 忽略 index，用 with-replacement 的隨機抽樣
+        ridx = self.rng.randint(0, len(self.data) - 1)
+        path = self.data[ridx]
+        sample = self.loader(path)
+        target = -1
+        return sample, target
 
