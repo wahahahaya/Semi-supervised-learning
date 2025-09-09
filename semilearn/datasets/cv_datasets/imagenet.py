@@ -116,21 +116,14 @@ def get_imagenet(args, alg, name, num_labels, num_classes, data_dir='./data', in
         f.write("OOD unlabeled images: {}\n".format(ood_count))
         f.close()
 
+    if args.use_noise:
+        noise_imglist = '/home/arlenchen/SSL_data_filtering/data/imgnet_noise/near/test_ninco.txt'
+        noise_path = '/raid/arlen_dataset/imagenet_ood/near'
+        noise_dset = ImagenetDataset(root=noise_path, transform=transform_weak, alg=alg, imglist_pth=noise_imglist, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
 
-    # noise_imglist = '/home/arlenchen/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet/test_ninco.txt'
-    # if args.use_noise:
-    #     noise_number = args.noise_num
-    #     noise_path = args.noise_path
-    #     noise_dset = OODImageListDataset(
-    #         root=noise_path,
-    #         imglist_pth=noise_imglist,
-    #         transform=transform_weak, alg=alg, ulb=True,
-    #         medium_transform=transform_medium, strong_transform=transform_strong,
-    #         percentage=noise_number, seed=42
-    #     )
-
-    #     ulb_dset.data.extend(noise_dset.data)
-    #     ulb_dset.targets.extend(noise_dset.targets)
+        noise_num = args.noise_num
+        ulb_dset.data.extend(noise_dset.data[:noise_num])
+        ulb_dset.targets.extend(noise_dset.targets[:noise_num])
 
     # breakpoint()
     return lb_dset, ulb_dset, eval_dset
@@ -215,64 +208,4 @@ class ImagenetDataset(BasicDataset, ImageFolder):
         gc.collect()
         self.lb_idx = lb_idx
         return instances
-
-class OODImageListDataset(BasicDataset):
-    """
-    從 imglist 讀取 OOD 影像, target 固定為 -1。
-    - 支援 percentage(cap OOD 池大小)
-    - __sample__ 用隨機索引以實現 with-replacement
-    """
-    def __init__(self, root, imglist_pth, transform, alg,
-                 ulb=True, medium_transform=None, strong_transform=None,
-                 percentage=-1, seed=42):
-        self.alg = alg
-        self.is_ulb = ulb
-        self.transform = transform
-        self.root = root
-        self.rng = random.Random(seed)
-        percentage = percentage / 10 if percentage > 1 else percentage
-
-        # 讀清單
-        with open(imglist_pth, 'r') as f:
-            lines = [ln.strip() for ln in f if ln.strip()]
-        breakpoint()
-
-        # 可選 cap（以比例或以實數剪裁，這裡用比例）
-        if percentage is not None and percentage > 0:
-            k = max(1, int(len(lines) * percentage))
-            lines = lines[:k]
-
-        # 儲存 full paths；目標全 -1
-        self.data = []
-        for ln in lines:
-            parts = ln.split()
-            rel = parts[0]
-            full = os.path.join(root, rel)
-            if os.path.isfile(full):
-                self.data.append(full)
-
-        if len(self.data) == 0:
-            raise RuntimeError(f"Found 0 OOD samples in {imglist_pth}")
-
-        self.targets = [-1] * len(self.data)
-
-        # loader 與增強
-        self.loader = default_loader
-        self.medium_transform = medium_transform
-        self.strong_transform = strong_transform
-        if self.medium_transform is None or self.strong_transform is None:
-            # 對於半監督 ULB，我們預設需要 medium/strong
-            assert self.alg not in ['fullysupervised', 'supervised'], "ULB requires medium/strong transforms"
-
-    def __len__(self):
-        # 真正長度可用於估算，但我們在 __sample__ 走隨機（with-replacement）
-        return len(self.data)
-
-    def __sample__(self, index):
-        # 忽略 index，用 with-replacement 的隨機抽樣
-        ridx = self.rng.randint(0, len(self.data) - 1)
-        path = self.data[ridx]
-        sample = self.loader(path)
-        target = -1
-        return sample, target
 
