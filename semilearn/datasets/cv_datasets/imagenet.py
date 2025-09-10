@@ -97,6 +97,10 @@ def get_imagenet(args, alg, name, num_labels, num_classes, data_dir='./data', in
     val_imgpath = '/home/arlenchen/SSL_data_filtering/OpenOOD/data/images_largescale'
     eval_dset = ImagenetDataset(root=val_imgpath, transform=transform_val, alg=alg, imglist_pth=val_imglist, ulb=False)
 
+    if args.use_noise:
+        noise_path = args.noise_path
+        ulb_dset = ImagenetDataset(root="", transform=transform_weak, alg=alg, imglist_pth=noise_path, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
+
     lb_count = [0 for _ in range(num_classes)]
     ulb_count = [0 for _ in range(num_classes)]
     ood_count = 0
@@ -116,16 +120,6 @@ def get_imagenet(args, alg, name, num_labels, num_classes, data_dir='./data', in
         f.write("OOD unlabeled images: {}\n".format(ood_count))
         f.close()
 
-    if args.use_noise:
-        noise_imglist = '/home/arlenchen/SSL_data_filtering/data/imgnet_noise/near/test_ninco.txt'
-        noise_path = '/raid/arlen_dataset/imagenet_ood/near'
-        noise_dset = ImagenetDataset(root=noise_path, transform=transform_weak, alg=alg, imglist_pth=noise_imglist, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
-
-        noise_num = args.noise_num
-        ulb_dset.data.extend(noise_dset.data[:noise_num])
-        ulb_dset.targets.extend(noise_dset.targets[:noise_num])
-
-    # breakpoint()
     return lb_dset, ulb_dset, eval_dset
     
 
@@ -153,9 +147,13 @@ class ImagenetDataset(BasicDataset, ImageFolder):
 
         self.loader = default_loader
 
-        classes, class_to_idx = self.find_classes(self.root)
-        self.classes = classes
-        self.class_to_idx = class_to_idx
+        # classes, class_to_idx = self.find_classes(self.root)
+        # self.classes = classes
+        # self.class_to_idx = class_to_idx
+
+        unique_targets = sorted(set(self.targets))
+        self.classes = [str(c) for c in unique_targets]
+        self.class_to_idx = {str(c): c for c in unique_targets}
 
 
         self.medium_transform = medium_transform
