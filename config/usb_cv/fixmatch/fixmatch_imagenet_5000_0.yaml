@@ -5,7 +5,7 @@ use_tensorboard: True
 use_wandb: False
 use_aim: False
 epoch: 200
-num_train_iter: 256000
+num_train_iter: 80000
 num_log_iter: 32
 num_eval_iter: 256
 batch_size: 64

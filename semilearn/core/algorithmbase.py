@@ -401,7 +401,7 @@ class AlgorithmBase:
         save_filename = os.path.join(save_path, save_name)
         save_dict = self.get_save_dict()
         # baseline model need save
-        torch.save(save_dict, save_filename)
+        # torch.save(save_dict, save_filename)
         self.print_fn(f"model saved: {save_filename}")
 
 
