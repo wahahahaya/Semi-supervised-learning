@@ -62,26 +62,36 @@ def get_json_dset(args, alg='fixmatch', dataset='acmIb', num_labels=40, num_clas
                                                                     include_lb_to_ulb=include_lb_to_ulb)
         # 補 noise
         if args.use_noise:
-            noise_path = args.noise_path
-            with open(noise_path,'r') as json_data:
-                noise_data = json.load(json_data)
-            noise_num = int(args.noise_num)
-            noise_sen_list = []
-            for i, idx in enumerate(noise_data):
-                if i >= noise_num: 
-                    break
-                n = noise_data[idx]
-                noise_sen_list.append((n['ori'], n['aug_0'], n['aug_1']))
+            if args.use_filter:
+                noise_path = args.noise_path
+                with open(noise_path,'r') as json_data:
+                    noise_data = json.load(json_data)
+                ulb_sen_list = []
+                for i, idx in enumerate(noise_data):
+                    n = noise_data[idx]
+                    ulb_sen_list.append((n['ori'], n['aug_0'], n['aug_1']))
+                ulb_label_list = [-1] * len(ulb_sen_list)
 
-            if isinstance(ulb_sen_list, np.ndarray):
-                ulb_sen_list = ulb_sen_list.tolist()
-            ulb_sen_list.extend(noise_sen_list)
-            
-            add_labels = [-1] * len(noise_sen_list)
-            if isinstance(ulb_label_list, np.ndarray):
-                ulb_label_list = ulb_label_list.astype(np.int16, copy=False).tolist()
-            ulb_label_list.extend(add_labels)
+            else:
+                noise_path = args.noise_path
+                with open(noise_path,'r') as json_data:
+                    noise_data = json.load(json_data)
+                noise_num = int(args.noise_num)
+                noise_sen_list = []
+                for i, idx in enumerate(noise_data):
+                    if i >= noise_num: 
+                        break
+                    n = noise_data[idx]
+                    noise_sen_list.append((n['ori'], n['aug_0'], n['aug_1']))
 
+                if isinstance(ulb_sen_list, np.ndarray):
+                    ulb_sen_list = ulb_sen_list.tolist()
+                ulb_sen_list.extend(noise_sen_list)
+                
+                add_labels = [-1] * len(noise_sen_list)
+                if isinstance(ulb_label_list, np.ndarray):
+                    ulb_label_list = ulb_label_list.astype(np.int16, copy=False).tolist()
+                ulb_label_list.extend(add_labels)
 
         # output the distribution of labeled data for remixmatch
         count = [0 for _ in range(num_classes)]

@@ -4,7 +4,7 @@ overwrite: True
 use_tensorboard: True
 use_wandb: False
 epoch: 100
-num_train_iter: 12800
+num_train_iter: 25600
 num_warmup_iter: 0
 num_log_iter: 64
 num_eval_iter: 128

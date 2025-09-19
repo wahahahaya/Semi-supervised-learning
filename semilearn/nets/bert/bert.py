@@ -3,14 +3,17 @@
 
 import torch
 import torch.nn as nn
-from transformers import BertModel, BertConfig
+from transformers import BertModel, BertConfig, AutoModel, AutoTokenizer
 import os
 
 class ClassificationBert(nn.Module):
     def __init__(self, name, num_classes=2):
         super(ClassificationBert, self).__init__()
         # Load pre-trained bert model
-        self.bert = BertModel.from_pretrained(name)
+        # self.bert = BertModel.from_pretrained(name)
+        if name == 'bert-base-uncased':
+            name = 'FacebookAI/roberta-base'
+        self.bert = AutoModel.from_pretrained(name)
         self.dropout = torch.nn.Dropout(p=0.1, inplace=False)
         self.num_features = 768
         self.classifier = nn.Sequential(*[
@@ -70,5 +73,6 @@ def bert_base_cased(pretrained=True, pretrained_path=None, **kwargs):
 
 
 def bert_base_uncased(pretrained=True, pretrained_path=None, **kwargs):
-    model = ClassificationBert(name='bert-base-uncased', **kwargs)
+    # model = ClassificationBert(name='bert-base-uncased', **kwargs)
+    model = ClassificationBert(name='FacebookAI/roberta-base', **kwargs)
     return model
