@@ -1,6 +1,8 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+# fixmatch, flexmatch, pseudolabel, vat
+
 import os
 import gc
 import copy
@@ -81,45 +83,52 @@ def get_imagenet(args, alg, name, num_labels, num_classes, data_dir='./data', in
     ])
 
     data_dir = os.path.join(data_dir, name.lower())
-    """
-    train:
-        dataset_class: ImglistDataset
-        data_dir: ./data/images_largescale/
-        imglist_pth: ./data/benchmark_imglist/imagenet200/train_imagenet200.txt
-        batch_size: 256
-        shuffle: True
-    val:
-        dataset_class: ImglistDataset
-        data_dir: ./data/images_largescale/
-        imglist_pth: ./data/benchmark_imglist/imagenet200/val_imagenet200.txt
-        batch_size: 256
-        shuffle: False
-    test:
-        dataset_class: ImglistDataset
-        data_dir: ./data/images_largescale/
-        imglist_pth: ./data/benchmark_imglist/imagenet200/test_imagenet200.txt
-        batch_size: 256
-        shuffle: False
-    """
 
-    dataset = ImagenetDataset(root='/home/arlenchen/SSL_data_filtering/OpenOOD/data/images_largescale', transform=transform_weak, ulb=False, alg=alg, imglist_pth='/home/arlenchen/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet200/train_imagenet200.txt')
-    percentage = num_labels / len(dataset)
+    train_imglist = '/home/arlenchen/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet200/train_imagenet200.txt'
+    val_imglist = '/home/arlenchen/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet200/val_imagenet200.txt'
+    train_imgpath = '/raid/arlen_dataset/imagenet/'
+    dataset = ImagenetDataset(root=train_imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist)
+    label_perclass = num_labels // (max(dataset.targets)+1)
 
-    lb_dset = ImagenetDataset(root=os.path.join(data_dir, "train"), transform=transform_weak, ulb=False, alg=alg, percentage=percentage)
+    lb_dset = ImagenetDataset(root=train_imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist, label_perclass=label_perclass)
 
-    ulb_dset = ImagenetDataset(root=os.path.join(data_dir, "train"), transform=transform_weak, alg=alg, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
+    ulb_dset = ImagenetDataset(root=train_imgpath, transform=transform_weak, alg=alg, imglist_pth=train_imglist, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
 
-    eval_dset = ImagenetDataset(root=os.path.join(data_dir, "val"), transform=transform_val, alg=alg, ulb=False)
+    val_imgpath = '/home/arlenchen/SSL_data_filtering/OpenOOD/data/images_largescale'
+    eval_dset = ImagenetDataset(root=val_imgpath, transform=transform_val, alg=alg, imglist_pth=val_imglist, ulb=False)
+
+    if args.use_noise:
+        noise_path = args.noise_path
+        ulb_dset = ImagenetDataset(root="", transform=transform_weak, alg=alg, imglist_pth=noise_path, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
+
+    lb_count = [0 for _ in range(num_classes)]
+    ulb_count = [0 for _ in range(num_classes)]
+    ood_count = 0
+    for lb in lb_dset.targets:
+        lb_count[lb] += 1
+    for ulb in ulb_dset.targets:
+        if ulb >= 0:
+            ulb_count[ulb] += 1
+        if ulb == -1:
+            ood_count += 1
+    save_dir = os.path.join(args.save_dir, args.save_name)
+    noise_name = "None"
+    with open(os.path.join(save_dir, f'{noise_name}.txt'), 'w') as f:
+        f.write("Dataset: {}\n".format(noise_name))
+        f.write("lb_count: {}\n".format(lb_count))
+        f.write("ulb_count: {}\n".format(ulb_count + [ood_count]))
+        f.write("OOD unlabeled images: {}\n".format(ood_count))
+        f.close()
 
     return lb_dset, ulb_dset, eval_dset
     
 
 
 class ImagenetDataset(BasicDataset, ImageFolder):
-    def __init__(self, root, transform, ulb, alg, imglist_pth=None, medium_transform=None, strong_transform=None, percentage=-1, include_lb_to_ulb=True, lb_index=None):
+    def __init__(self, root, transform, ulb, alg, imglist_pth=None, medium_transform=None, strong_transform=None, label_perclass=-1, include_lb_to_ulb=True, lb_index=None):
         self.alg = alg
         self.is_ulb = ulb
-        self.percentage = percentage
+        self.label_perclass = label_perclass
         self.transform = transform
         self.root = root
         self.include_lb_to_ulb = include_lb_to_ulb
@@ -129,32 +138,23 @@ class ImagenetDataset(BasicDataset, ImageFolder):
             samples = self._make_dataset_from_list(imglist_pth)
         else:
             raise ValueError("You must provide imglist_pth for ImagenetDataset")
-        
+
         if len(samples) == 0:
             raise RuntimeError(f"Found 0 samples in {imglist_pth}")
         
         self.data = [s[0] for s in samples]
         self.targets = [s[1] for s in samples]
 
-        breakpoint()
+        self.loader = default_loader
 
-        # is_valid_file = None
-        # extensions = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp')
         # classes, class_to_idx = self.find_classes(self.root)
-        # samples = self.make_dataset(self.root, class_to_idx, extensions, is_valid_file)
-        # if len(samples) == 0:
-        #     msg = "Found 0 files in subfolders of: {}\n".format(self.root)
-        #     if extensions is not None:
-        #         msg += "Supported extensions are: {}".format(",".join(extensions))
-        #     raise RuntimeError(msg)
-
-        # self.loader = default_loader
-        # self.extensions = extensions
-
         # self.classes = classes
         # self.class_to_idx = class_to_idx
-        # self.data = [s[0] for s in samples]
-        # self.targets = [s[1] for s in samples]
+
+        unique_targets = sorted(set(self.targets))
+        self.classes = [str(c) for c in unique_targets]
+        self.class_to_idx = {str(c): c for c in unique_targets}
+
 
         self.medium_transform = medium_transform
         if self.medium_transform is None:
@@ -172,46 +172,6 @@ class ImagenetDataset(BasicDataset, ImageFolder):
         target = self.targets[index]
         return sample, target
 
-    def make_dataset(
-            self,
-            directory,
-            class_to_idx,
-            extensions=None,
-            is_valid_file=None,
-    ):
-        instances = []
-        directory = os.path.expanduser(directory)
-        both_none = extensions is None and is_valid_file is None
-        both_something = extensions is not None and is_valid_file is not None
-        if both_none or both_something:
-            raise ValueError("Both extensions and is_valid_file cannot be None or not None at the same time")
-        if extensions is not None:
-            def is_valid_file(x: str) -> bool:
-                return x.lower().endswith(extensions)
-        
-        lb_idx = {}
-        for target_class in sorted(class_to_idx.keys()):
-            class_index = class_to_idx[target_class]
-            target_dir = os.path.join(directory, target_class)
-            if not os.path.isdir(target_dir):
-                continue
-            for root, _, fnames in sorted(os.walk(target_dir, followlinks=True)):
-                random.shuffle(fnames)
-                if self.percentage != -1:
-                    fnames = fnames[:int(len(fnames) * self.percentage)]
-                if self.percentage != -1:
-                    lb_idx[target_class] = fnames
-                for fname in fnames:
-                    if not self.include_lb_to_ulb:
-                        if fname in self.lb_index[target_class]:
-                            continue
-                    path = os.path.join(root, fname)
-                    if is_valid_file(path):
-                        item = path, class_index
-                        instances.append(item)
-        gc.collect()
-        self.lb_idx = lb_idx
-        return instances
     
     def _make_dataset_from_list(self, imglist_pth):
         """
@@ -219,23 +179,31 @@ class ImagenetDataset(BasicDataset, ImageFolder):
         'imagenet_1k/train/n04372370/n04372370_9138.JPEG 844\n'
         """
         instances = []
+        buckets = {} 
+
         with open(imglist_pth, 'r') as f:
-            lines = f.readlines()
-
-        random.shuffle(lines)
-
-        if self.percentage > 0:
-            lines = lines[:int(len(lines) * self.percentage)]
+            lines = [ln.strip() for ln in f if ln.strip()]
 
         for line in lines:
-            path, target = line.strip().split()
-            full_path = os.path.join(self.root, path)
+            path, target = line.split()
             target = int(target)
+            full_path = os.path.join(self.root, path)
             if os.path.isfile(full_path):
-                instances.append((full_path, target))
+                buckets.setdefault(target, []).append((full_path, target))
 
-            breakpoint()
-        
+        lb_idx = {}
+        if self.label_perclass > 0 and not self.is_ulb:
+            for cls, items in buckets.items():
+                k = min(self.label_perclass, len(items))
+                chosen = random.sample(items, k)
+                instances.extend(chosen)
+                lb_idx[cls] = [os.path.basename(p) for p, _ in chosen]
+        else:
+            for cls, items in buckets.items():
+                instances.extend(items)
+            lb_idx = {}
+
         gc.collect()
+        self.lb_idx = lb_idx
         return instances
 

@@ -1,8 +1,8 @@
 algorithm: supervised
 save_dir: ./saved_models/usb_cv/
-save_name: supervised_imagenet_100000_0
+save_name: supervised_imagenet_100000_0_v1
 resume: True
-load_path: ./saved_models/usb_cv//supervised_imagenet_100000_0/latest_model.pth
+load_path: ./saved_models/usb_cv//supervised_imagenet_100000_0_v1/latest_model.pth
 overwrite: True
 use_tensorboard: True
 use_wandb: False
@@ -20,10 +20,10 @@ ema_m: 0.0
 img_size: 224
 crop_ratio: 0.875
 optim: AdamW
-lr: 0.001
+lr: 3e-4
 layer_decay: 0.75
 momentum: 0.9
-weight_decay: 0.01
+weight_decay: 0.05
 amp: True
 clip: 0.0
 use_cat: True
