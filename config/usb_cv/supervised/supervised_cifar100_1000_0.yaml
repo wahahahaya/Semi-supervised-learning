@@ -1,5 +1,8 @@
-algorithm: pseudolabel
+algorithm: supervised
+save_dir: ./saved_models/usb_cv/
+save_name: supervised_cifar100_1000_0
 resume: True
+load_path: ./saved_models/usb_cv//supervised_cifar100_1000_0/latest_model.pth
 overwrite: True
 use_tensorboard: True
 use_wandb: False
@@ -10,12 +13,9 @@ num_eval_iter: 256
 batch_size: 64
 eval_batch_size: 16
 num_warmup_iter: 0
-num_labels: 400
+num_labels: 1000
 uratio: 1
 ema_m: 0.0
-p_cutoff: 0.95
-ulb_loss_ratio: 1.0
-unsup_warm_up: 0.4
 img_size: 32
 crop_ratio: 0.875
 optim: AdamW
@@ -37,7 +37,7 @@ seed: 0
 world_size: 1
 rank: 0
 multiprocessing_distributed: False
-dist_url: tcp://127.0.0.1:10016
+dist_url: tcp://127.0.0.1:10026
 dist_backend: nccl
 gpu: None
 use_pretrain: True
