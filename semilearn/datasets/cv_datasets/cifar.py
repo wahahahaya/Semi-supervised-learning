@@ -81,7 +81,7 @@ def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', inclu
             noise_path = args.noise_path 
             noise_data = np.load(noise_path)
             noise_number = args.noise_num
-            if noise_number == 0:
+            if noise_number == 0: # noise only
                 ulb_data = noise_data
                 ulb_targets = -1 * np.ones(noise_data.shape[0])
             else:

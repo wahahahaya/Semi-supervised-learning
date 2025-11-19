@@ -84,18 +84,17 @@ def get_imagenet(args, alg, name, num_labels, num_classes, data_dir='./data', in
 
     data_dir = os.path.join(data_dir, name.lower())
 
-    train_imglist = '/home/arlenchen/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet200/train_imagenet200.txt'
-    val_imglist = '/home/arlenchen/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet200/val_imagenet200.txt'
-    train_imgpath = '/raid/arlen_dataset/imagenet/'
-    dataset = ImagenetDataset(root=train_imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist)
+    train_imglist = '/home/ubuntu/SSL_data_filtering/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet200/train_imagenet200.txt'
+    val_imglist = '/home/ubuntu/SSL_data_filtering/SSL_data_filtering/OpenOOD/data/benchmark_imglist/imagenet200/val_imagenet200.txt'
+    imgpath = '/ephemeral/'
+    dataset = ImagenetDataset(root=imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist)
     label_perclass = num_labels // (max(dataset.targets)+1)
 
-    lb_dset = ImagenetDataset(root=train_imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist, label_perclass=label_perclass)
+    lb_dset = ImagenetDataset(root=imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist, label_perclass=label_perclass)
 
-    ulb_dset = ImagenetDataset(root=train_imgpath, transform=transform_weak, alg=alg, imglist_pth=train_imglist, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
+    ulb_dset = ImagenetDataset(root=imgpath, transform=transform_weak, alg=alg, imglist_pth=train_imglist, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
 
-    val_imgpath = '/home/arlenchen/SSL_data_filtering/OpenOOD/data/images_largescale'
-    eval_dset = ImagenetDataset(root=val_imgpath, transform=transform_val, alg=alg, imglist_pth=val_imglist, ulb=False)
+    eval_dset = ImagenetDataset(root=imgpath, transform=transform_val, alg=alg, imglist_pth=val_imglist, ulb=False)
 
     if args.use_noise:
         noise_path = args.noise_path
