@@ -313,6 +313,18 @@ class AlgorithmBase:
 
         self.call_hook("after_run")
 
+    def get_logits(self, data, out_key):
+        x = data['x_lb']
+        if isinstance(x, dict):
+            x = {k: v.cuda(self.gpu) for k, v in x.items()}
+        else:
+            x = x.cuda(self.gpu)
+
+        return self.model(x)[out_key]
+    
+    def get_targets(self, data):
+        y = data['y_lb']
+        return y.cuda(self.gpu)
 
     def evaluate(self, eval_dest='eval', out_key='logits', return_logits=False):
         """
@@ -330,19 +342,11 @@ class AlgorithmBase:
         y_logits = []
         with torch.no_grad():
             for data in eval_loader:
-                x = data['x_lb']
-                y = data['y_lb']
-                
-                if isinstance(x, dict):
-                    x = {k: v.cuda(self.gpu) for k, v in x.items()}
-                else:
-                    x = x.cuda(self.gpu)
-                y = y.cuda(self.gpu)
+                logits = self.get_logits(data, out_key)
+                y = self.get_targets(data)
 
                 num_batch = y.shape[0]
                 total_num += num_batch
-
-                logits = self.model(x)[out_key]
                 
                 loss = F.cross_entropy(logits, y, reduction='mean', ignore_index=-1)
                 y_true.extend(y.cpu().tolist())
