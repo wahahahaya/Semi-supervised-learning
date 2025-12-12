@@ -8,11 +8,7 @@ from transformers import BertModel, BertConfig, AutoModel, AutoTokenizer
 class ClassificationBert(nn.Module):
     def __init__(self, name, num_classes=2):
         super(ClassificationBert, self).__init__()
-        if name == 'bert-base-uncased' or name == 'bert-base-cased':
-            # self.bert = BertModel.from_pretrained(name)
-            self.bert = AutoModel.from_pretrained('FacebookAI/roberta-base')
-        elif name == 'FacebookAI/roberta-base':
-            self.bert = AutoModel.from_pretrained(name)
+        self.bert = AutoModel.from_pretrained(name)
         
         self.dropout = torch.nn.Dropout(p=0.1, inplace=False)
         self.num_features = 768
