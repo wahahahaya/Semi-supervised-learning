@@ -1,8 +1,6 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-# fixmatch, flexmatch, pseudolabel, vat
-
 import os
 import gc
 import copy
@@ -16,35 +14,9 @@ import math
 from semilearn.datasets.augmentation import RandAugment, RandomResizedCropAndInterpolation, str_to_interp_mode
 from semilearn.datasets.cv_datasets.datasetbase import BasicDataset
 
-
 mean, std = {}, {}
 mean['imagenet'] = [0.485, 0.456, 0.406]
 std['imagenet'] = [0.229, 0.224, 0.225]
-
-
-def accimage_loader(path):
-    import accimage
-    try:
-        return accimage.Image(path)
-    except IOError:
-        # Potentially a decoding problem, fall back to PIL.Image
-        return pil_loader(path)
-
-
-def pil_loader(path):
-    # open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
-    with open(path, 'rb') as f:
-        img = Image.open(f)
-        return img.convert('RGB')
-
-
-def default_loader(path):
-    from torchvision import get_image_backend
-    if get_image_backend() == 'accimage':
-        return accimage_loader(path)
-    else:
-        return pil_loader(path)
-
 
 def get_imagenet(args, alg, name, num_labels, num_classes, data_dir='./data', include_lb_to_ulb=True):
     img_size = args.img_size
@@ -83,223 +55,205 @@ def get_imagenet(args, alg, name, num_labels, num_classes, data_dir='./data', in
         transforms.Normalize(mean['imagenet'], std['imagenet'])
     ])
 
-    data_dir = os.path.join(data_dir, name.lower())
+    # 設定 .npy 檔案的路徑
+    # 根據你的描述，檔案在 /ephemeral/imagenet_1k/
+    base_npy_path = data_dir
+    
+    train_data_path = os.path.join(base_npy_path, 'imagenet200_id_images.npy')
+    train_label_path = os.path.join(base_npy_path, 'imagenet200_id_labels.npy')
+    
+    val_data_path = os.path.join(base_npy_path, 'imagenet200_val_images.npy')
+    val_label_path = os.path.join(base_npy_path, 'imagenet200_val_labels.npy')
 
-    train_imglist = '/home/ubuntu/V-SAFE/supervised/data/train_imagenet200.txt'
-    val_imglist = '/home/ubuntu/V-SAFE/supervised/data/val_imagenet200.txt'
-    imgpath = '/ephemeral/'
-    dataset = ImagenetDataset(root=imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist)
-    label_perclass = num_labels // (max(dataset.targets)+1)
+    # 計算每類要取多少張 labeled data
+    # 這裡需要預先載入一次 label 來計算總類別數，或者直接用傳入的 num_classes
+    # 為了安全起見，這裡先計算 label_perclass
+    # 注意：這裡假設 targets 是 0-indexed 的整數
+    
+    # 1. 建立 Labeled Dataset
+    # lb_list_txt 如果有指定 index 檔案，會從裡面讀取 index
+    lb_dset = ImagenetNpyDataset(
+        data_path=train_data_path,
+        label_path=train_label_path,
+        transform=transform_weak,
+        ulb=False,
+        alg=alg,
+        label_perclass=num_labels // num_classes # 這裡簡化計算，假設數據分佈均勻
+    )
 
-    lb_dset = ImagenetDataset(root=imgpath, transform=transform_weak, ulb=False, alg=alg, imglist_pth=train_imglist, label_perclass=label_perclass)
-    breakpoint()
+    # 2. 建立 Unlabeled Dataset
+    # 這裡將整個 training set 作為 unlabeled set
+    ulb_dset = ImagenetNpyDataset(
+        data_path=train_data_path,
+        label_path=train_label_path,
+        transform=transform_weak,
+        alg=alg,
+        ulb=True,
+        medium_transform=transform_medium,
+        strong_transform=transform_strong,
+        include_lb_to_ulb=include_lb_to_ulb,
+        # 如果需要排除已選的 labeled index，可傳入 lb_dset.selected_indices
+        lb_index=lb_dset.selected_indices 
+    )
 
-    ulb_dset = ImagenetDataset(root=imgpath, transform=transform_weak, alg=alg, imglist_pth=train_imglist, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
+    # 3. 建立 Validation Dataset
+    eval_dset = ImagenetNpyDataset(
+        data_path=val_data_path,
+        label_path=val_label_path,
+        transform=transform_val,
+        alg=alg,
+        ulb=False
+    )
 
-    eval_dset = ImagenetDataset(root=imgpath, transform=transform_val, alg=alg, imglist_pth=val_imglist, ulb=False)
-
-    # if args.use_noise:
-    #     noise_path = args.noise_path
-    #     ulb_dset = ImagenetDataset(root="", transform=transform_weak, alg=alg, imglist_pth=noise_path, ulb=True, medium_transform=transform_medium, strong_transform=transform_strong, include_lb_to_ulb=include_lb_to_ulb, lb_index=lb_dset.lb_idx)
-
+    # 統計數據 (Logging)
     lb_count = [0 for _ in range(num_classes)]
     ulb_count = [0 for _ in range(num_classes)]
-    ood_count = 0
+    
     for lb in lb_dset.targets:
         lb_count[lb] += 1
+        
+    # 注意：如果是 Unlabeled，targets 可能還是原始 label (用於評估) 或者被設為 -1
     for ulb in ulb_dset.targets:
-        if ulb >= 0:
-            ulb_count[ulb] += 1
-        if ulb == -1:
-            ood_count += 1
+        ulb_count[ulb] += 1
+
     save_dir = os.path.join(args.save_dir, args.save_name)
-    noise_name = "None"
-    with open(os.path.join(save_dir, f'{noise_name}.txt'), 'w') as f:
-        f.write("Dataset: {}\n".format(noise_name))
+    os.makedirs(save_dir, exist_ok=True)
+    
+    with open(os.path.join(save_dir, 'Note.txt'), 'w') as f:
         f.write("lb_count: {}\n".format(lb_count))
-        f.write("ulb_count: {}\n".format(ulb_count + [ood_count]))
-        f.write("OOD unlabeled images: {}\n".format(ood_count))
+        f.write("ulb_count: {}\n".format(ulb_count))
         f.close()
 
     return lb_dset, ulb_dset, eval_dset
-    
 
 
-class ImagenetDataset(BasicDataset, ImageFolder):
-    def __init__(self, root, transform, ulb, alg, imglist_pth=None, medium_transform=None, strong_transform=None, label_perclass=-1, include_lb_to_ulb=True, lb_index=None):
+class ImagenetNpyDataset(BasicDataset):
+    def __init__(self, data_path, label_path, transform, ulb, alg, 
+                 lb_list_txt=None, medium_transform=None, strong_transform=None, 
+                 label_perclass=-1, include_lb_to_ulb=True, lb_index=None):
+        
         self.alg = alg
         self.is_ulb = ulb
         self.label_perclass = label_perclass
         self.transform = transform
-        self.root = root
         self.include_lb_to_ulb = include_lb_to_ulb
-        self.lb_index = lb_index
-
-        if imglist_pth is not None:
-            samples = self._make_dataset_from_list(imglist_pth)
-        else:
-            raise ValueError("You must provide imglist_pth for ImagenetDataset")
-
-        if len(samples) == 0:
-            raise RuntimeError(f"Found 0 samples in {imglist_pth}")
+        self.lb_list_txt = lb_list_txt
         
-        self.data = [s[0] for s in samples]
-        self.targets = [s[1] for s in samples]
+        # 載入數據
+        # mmap_mode='r' 非常重要，避免一次將數 GB 的圖片載入 RAM
+        try:
+            self.data_mmap = np.load(data_path, mmap_mode='r')
+            self.targets_all = np.load(label_path)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load npy files: {data_path} or {label_path}. Error: {e}")
 
-        self.loader = default_loader
+        self.selected_indices = [] # 用來存儲被選中的 index
 
-        # classes, class_to_idx = self.find_classes(self.root)
-        # self.classes = classes
-        # self.class_to_idx = class_to_idx
+        # 處理 Labeled / Unlabeled 的數據分割
+        self._init_data_selection(lb_index)
 
-        unique_targets = sorted(set(self.targets))
-        self.classes = [str(c) for c in unique_targets]
-        self.class_to_idx = {str(c): c for c in unique_targets}
-
-
+        # 設定 Augmentation
         self.medium_transform = medium_transform
-        if self.medium_transform is None:
-            if self.is_ulb:
-                assert self.alg not in ['sequencematch'], f"alg {self.alg} requires strong augmentation"
-        self.strong_transform = strong_transform
-        if self.strong_transform is None:
-            if self.is_ulb:
-                assert self.alg not in ['fullysupervised', 'supervised', 'pseudolabel', 'vat', 'pimodel', 'meanteacher', 'mixmatch', 'refixmatch'], f"alg {self.alg} requires strong augmentation"
-
-
-    def __sample__(self, index):
-        path = self.data[index]
-        sample = self.loader(path)
-        target = self.targets[index]
-        return sample, target
-
-    
-class ImagenetDataset(BasicDataset, ImageFolder):
-    def __init__(self, root, transform, ulb, alg, imglist_pth=None, lb_list_txt=None, medium_transform=None, strong_transform=None, label_perclass=-1, include_lb_to_ulb=True, lb_index=None):
-        self.alg = alg
-        self.is_ulb = ulb
-        self.label_perclass = label_perclass
-        self.transform = transform
-        self.root = root
-        self.include_lb_to_ulb = include_lb_to_ulb
-        self.lb_index = lb_index
+        if self.medium_transform is None and self.is_ulb:
+             assert self.alg not in ['sequencematch'], f"alg {self.alg} requires strong augmentation"
         
-        # 新增：接收指定 index 的 txt 檔案路徑
-        self.lb_list_txt = lb_list_txt 
-
-        if imglist_pth is not None:
-            samples = self._make_dataset_from_list(imglist_pth)
-        else:
-            raise ValueError("You must provide imglist_pth for ImagenetDataset")
-
-        if len(samples) == 0:
-            raise RuntimeError(f"Found 0 samples in {imglist_pth}")
-        
-        self.data = [s[0] for s in samples]
-        self.targets = [s[1] for s in samples]
-
-        self.loader = default_loader
-
-        unique_targets = sorted(set(self.targets))
-        self.classes = [str(c) for c in unique_targets]
-        self.class_to_idx = {str(c): c for c in unique_targets}
-
-        self.medium_transform = medium_transform
-        if self.medium_transform is None:
-            if self.is_ulb:
-                assert self.alg not in ['sequencematch'], f"alg {self.alg} requires strong augmentation"
         self.strong_transform = strong_transform
-        if self.strong_transform is None:
-            if self.is_ulb:
-                assert self.alg not in ['fullysupervised', 'supervised', 'pseudolabel', 'vat', 'pimodel', 'meanteacher', 'mixmatch', 'refixmatch'], f"alg {self.alg} requires strong augmentation"
+        if self.strong_transform is None and self.is_ulb:
+            assert self.alg not in ['fullysupervised', 'supervised', 'pseudolabel', 'vat', 'pimodel', 'meanteacher', 'mixmatch', 'refixmatch'], f"alg {self.alg} requires strong augmentation"
 
-    def __sample__(self, index):
-        path = self.data[index]
-        sample = self.loader(path)
-        target = self.targets[index]
-        return sample, target
-    
-    def _make_dataset_from_list(self, imglist_pth):
+    def _init_data_selection(self, excluded_indices=None):
         """
-        imglist_pth: 原始的大全 txt (e.g., train_imagenet200.txt)
-        格式: 'imagenet_1k/train/n04372370/n04372370_9138.JPEG 844'
+        根據 label_perclass 或 lb_list_txt 決定要使用哪些數據索引。
         """
-        instances = []
-        buckets = {} 
-
-        with open(imglist_pth, 'r') as f:
-            lines = [ln.strip() for ln in f if ln.strip()]
-
-        # === 步驟 1: 建立 Buckets 並保留原始 Index ===
-        for i, line in enumerate(lines):
-            path, target = line.split()
-            target = int(target)
-            full_path = os.path.join(self.root, path)
+        num_samples = len(self.targets_all)
+        all_indices = np.arange(num_samples)
+        
+        # === 分支 A: 如果是 Unlabeled Dataset ===
+        if self.is_ulb:
+            # 通常 Unlabeled set 包含所有數據
+            # 如果不想包含已標註的數據 (include_lb_to_ulb=False)，則排除之
+            if not self.include_lb_to_ulb and excluded_indices is not None:
+                # 排除 excluded_indices
+                mask = np.ones(num_samples, dtype=bool)
+                mask[excluded_indices] = False
+                self.indices = all_indices[mask]
+            else:
+                self.indices = all_indices
             
-            if os.path.isfile(full_path):
-                # 這裡存入 tuple: (完整路徑, label, 原始index, 相對路徑)
-                # 相對路徑用來做 string matching (如果有的話)
-                buckets.setdefault(target, []).append((full_path, target, i, path))
+            # Unlabeled set 的 targets 通常還是保留真實 label (為了計算 accuracy)，
+            # 但在訓練 loop 中是否使用取決於算法
+            self.targets = self.targets_all[self.indices]
+            return
 
-        lb_idx = {}
-        saved_idxs = [] # 用來收集這次選到的 index
-
-        # === 分支 A: 如果有指定要讀取的 labeled txt 檔案 (Loading Mode) ===
-        # 假設 self.lb_list_txt 是在 __init__ 傳進來的路徑
-        if hasattr(self, 'lb_list_txt') and self.lb_list_txt is not None and not self.is_ulb:
-            print(f"Loading specific labeled data from: {self.lb_list_txt}")
+        # === 分支 B: 如果有指定 index 的 txt 檔案 (Loading Mode) ===
+        if self.lb_list_txt is not None and os.path.exists(self.lb_list_txt):
+            print(f"Loading specific labeled indices from: {self.lb_list_txt}")
             with open(self.lb_list_txt, 'r') as f:
-                # 假設讀進來的是一行一個相對路徑，或是 index
-                # 這裡示範讀取相對路徑 (比較穩健)
-                target_paths = set([ln.strip().split()[0] for ln in f if ln.strip()])
+                # 假設 txt 每一行是一個整數 index
+                loaded_indices = [int(line.strip()) for line in f if line.strip().isdigit()]
             
-            for cls, items in buckets.items():
-                for full_path, target, original_idx, rel_path in items:
-                    # 比對相對路徑
-                    if rel_path in target_paths:
-                        instances.append((full_path, target))
-                        lb_idx.setdefault(cls, []).append(os.path.basename(full_path))
-            
-            if len(instances) == 0:
-                 print("Warning: No labeled data matches found in the provided list!")
+            self.indices = np.array(loaded_indices)
+            self.targets = self.targets_all[self.indices]
+            self.selected_indices = loaded_indices
+            return
 
-        # === 分支 B: 隨機取樣並存檔 (Sampling & Saving Mode) ===
-        elif self.label_perclass > 0 and not self.is_ulb:
-            print(f"Randomly sampling {self.label_perclass} per class...")
+        # === 分支 C: 隨機取樣並存檔 (Sampling Mode) ===
+        if self.label_perclass > 0:
+            print(f"Randomly sampling {self.label_perclass} per class from .npy data...")
             
-            for cls, items in buckets.items():
-                # items 是 (full_path, target, original_idx, rel_path)
-                k = min(self.label_perclass, len(items))
-                chosen = random.sample(items, k)
-                
-                # 1. 加入 instances 給 dataset 使用 (只需路徑和 label)
-                instances.extend([(x[0], x[1]) for x in chosen])
-                
-                # 2. 紀錄檔名 (原本 semilearn 的邏輯)
-                lb_idx[cls] = [os.path.basename(x[0]) for x in chosen]
-                
-                # 3. 收集原始 index (x[2] 是我們上面存的 i)
-                saved_idxs.extend([x[2] for x in chosen])
+            indices_per_class = {}
+            for idx, target in enumerate(self.targets_all):
+                if target not in indices_per_class:
+                    indices_per_class[target] = []
+                indices_per_class[target].append(idx)
+            
+            sampled_indices = []
+            
+            # 排序 key 確保順序固定 (雖然 dict 在新版 python 有序，但安全起見)
+            for cls in sorted(indices_per_class.keys()):
+                indices = indices_per_class[cls]
+                # 如果樣本數不夠，就全取
+                k = min(self.label_perclass, len(indices))
+                # 隨機選取
+                selected = random.sample(indices, k)
+                sampled_indices.extend(selected)
+            
+            self.indices = np.array(sampled_indices)
+            self.targets = self.targets_all[self.indices]
+            self.selected_indices = sampled_indices
 
-            # --- 存檔邏輯 ---
-            save_name = 'lb_labels10000_1_seed0_idx.txt'
+            # 存檔邏輯 (存 index)
+            save_name = 'lb_labels_sampled_idx.txt'
             print(f"Saving sampled indices to {save_name} ...")
-            
-            # 排序讓檔案好看一點 (Optional)
-            saved_idxs.sort()
-            
             with open(save_name, 'w') as f:
-                for idx in saved_idxs:
+                for idx in sorted(sampled_indices):
                     f.write(f"{idx}\n")
-            # ----------------
+            return
 
-        # === 分支 C: 全部使用 (Unlabeled data 或 Validation set) ===
-        else:
-            for cls, items in buckets.items():
-                # items 是 (full_path, target, original_idx, rel_path)
-                instances.extend([(x[0], x[1]) for x in items])
-            lb_idx = {}
+        # === 分支 D: 預設全選 (例如 Validation Set) ===
+        self.indices = all_indices
+        self.targets = self.targets_all
 
-        gc.collect()
-        self.lb_idx = lb_idx
-        return instances
+    def __sample__(self, index):
+        """
+        根據內部的 self.indices 映射到原始 .npy 的真實位置
+        """
+        real_index = self.indices[index]
+        
+        # 從 mmap 中讀取圖片數據
+        # 假設 .npy 形狀是 (N, H, W, C) 或 (N, C, H, W)
+        # PIL Image.fromarray 需要 (H, W, C) 且 dtype 為 uint8
+        img_array = self.data_mmap[real_index]
+        
+        # 如果是 (C, H, W) 需要轉置為 (H, W, C)，視你存檔時的格式而定
+        # ImageNet 存成 npy 通常已經是 uint8，如果是 float 0-1 則需要轉換
+        if img_array.shape[0] == 3: # 猜測是 (3, H, W)
+             img_array = img_array.transpose(1, 2, 0)
+        
+        img = Image.fromarray(img_array)
+        target = self.targets[index] # 這裡是已經篩選過的 targets
+        
+        return img, target
+
+    def __len__(self):
+        return len(self.indices)

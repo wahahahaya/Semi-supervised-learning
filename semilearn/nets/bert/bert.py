@@ -4,15 +4,16 @@
 import torch
 import torch.nn as nn
 from transformers import BertModel, BertConfig, AutoModel, AutoTokenizer
-import os
 
 class ClassificationBert(nn.Module):
     def __init__(self, name, num_classes=2):
         super(ClassificationBert, self).__init__()
-        # Load pre-trained bert model
-        if name == 'bert-base-uncased':
-            name = 'FacebookAI/roberta-base'
-        self.bert = AutoModel.from_pretrained(name)
+        if name == 'bert-base-uncased' or name == 'bert-base-cased':
+            # self.bert = BertModel.from_pretrained(name)
+            self.bert = AutoModel.from_pretrained('FacebookAI/roberta-base')
+        elif name == 'FacebookAI/roberta-base':
+            self.bert = AutoModel.from_pretrained(name)
+        
         self.dropout = torch.nn.Dropout(p=0.1, inplace=False)
         self.num_features = 768
         self.classifier = nn.Sequential(*[
@@ -49,7 +50,6 @@ class ClassificationBert(nn.Module):
             
         return result_dict
         
-        
     def extract(self, x):
         out_dict = self.bert(**x, output_hidden_states=True, return_dict=True)
         last_hidden = out_dict['last_hidden_state']
@@ -65,17 +65,17 @@ class ClassificationBert(nn.Module):
         return []
 
 
+# [修改 2] 恢復原本的 BERT 函數 (讓之後想跑 BERT 也能跑)
+def bert_base_uncased(pretrained=True, pretrained_path=None, **kwargs):
+    model = ClassificationBert(name='bert-base-uncased', **kwargs)
+    return model
 
 def bert_base_cased(pretrained=True, pretrained_path=None, **kwargs):
     model = ClassificationBert(name='bert-base-cased', **kwargs)
     return model
 
-
-def bert_base_uncased(pretrained=True, pretrained_path=None, **kwargs):
-    # model = ClassificationBert(name='bert-base-uncased', **kwargs)
-    model = ClassificationBert(name='FacebookAI/roberta-base', **kwargs)
-    return model
-
-def bert_base_roberta(pretrained=True, pretrained_path=None, **kwargs):
+# [修改 3] 新增這個函數，專門給 RoBERTa 使用
+def roberta_base(pretrained=True, pretrained_path=None, **kwargs):
+    # 這裡明確指定 RoBERTa 的路徑
     model = ClassificationBert(name='FacebookAI/roberta-base', **kwargs)
     return model

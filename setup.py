@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-""" Setup: pip install .
+""" Setup: pip install -e.
 """
 from setuptools import setup, find_packages
 from codecs import open

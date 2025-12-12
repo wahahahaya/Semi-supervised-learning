@@ -96,7 +96,7 @@ class CRMatch_Net(nn.Module):
                 feat_maps = feat_maps[:, 1:].mean(dim=1) if self.backbone.global_pool == 'avg' else feat_maps[:, 0]
             feat_maps = self.backbone.fc_norm(feat_maps)
             logits_ds = self.ds_classifier(feat_maps.view(feat_maps.size(0), -1))
-        elif 'bert' in self.args.net or 'wave2vec' in self.args.net:
+        elif 'bert' in self.args.net or 'roberta' in self.args.net or 'wave2vec' in self.args.net:
             logits_ds = self.ds_classifier(feat_maps.view(feat_maps.size(0), -1))
         else:
             raise NotImplementedError

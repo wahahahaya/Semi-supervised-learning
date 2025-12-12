@@ -99,13 +99,17 @@ class DataCollatorWithPadding:
 
 
 def get_bert_base_uncased_collactor(max_length=512):
-    # tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
-    tokenizer = AutoTokenizer.from_pretrained('FacebookAI/roberta-base')
+    tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
     collact_fn = DataCollatorWithPadding(tokenizer, max_length=max_length)
     return collact_fn
 
 
 def get_bert_base_cased_collactor(max_length=512):
     tokenizer = BertTokenizerFast.from_pretrained('bert-base-cased')
+    collact_fn = DataCollatorWithPadding(tokenizer, max_length=max_length)
+    return collact_fn
+
+def get_roberta_base_collactor(max_length=512):
+    tokenizer = AutoTokenizer.from_pretrained('FacebookAI/roberta-base')
     collact_fn = DataCollatorWithPadding(tokenizer, max_length=max_length)
     return collact_fn
