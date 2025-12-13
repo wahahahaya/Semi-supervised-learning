@@ -21,6 +21,57 @@ std['cifar10'] = [0.229, 0.224, 0.225]
 std['cifar100'] = [x / 255 for x in [68.2, 65.4, 70.4]]
 
 
+def mix_data_ressl_compliant(id_data, ood_data, target_ratio):
+    """
+    Mix ID and OOD data based on a specific target_ratio.
+    Constraint: ID data count is fixed based on a hardcoded max_ratio of 0.8.
+    """
+    max_ratio = 0.8  # Hardcoded as requested
+    max_ood_avail = len(ood_data)
+    len_original_id = len(id_data)
+
+    limit_id_by_ood = int(max_ood_avail * (1 - max_ratio) / max_ratio)
+    
+    n_id_fixed = min(len_original_id, limit_id_by_ood)
+    
+    print(f"\n=== RE-SSL Fairness Adjustment ===")
+    print(f"Max Ratio Constraint: {max_ratio}")
+    print(f"Max OOD Available:    {max_ood_avail}")
+    print(f"Original ID Count:    {len_original_id}")
+    print(f"Bottleneck ID Limit:  {limit_id_by_ood} (Calculated to fit r=0.8)")
+    print(f"FINAL FIXED ID Count: {n_id_fixed}")
+
+    np.random.seed(0)
+    fixed_id_indices = np.random.choice(len_original_id, n_id_fixed, replace=False)
+    fixed_id_data = id_data[fixed_id_indices]
+
+    if target_ratio == 0.0:
+        n_ood_needed = 0
+        current_ood_data = np.empty((0, *ood_data.shape[1:]), dtype=ood_data.dtype)
+    else:
+        # Calculate needed OOD
+        n_ood_needed = int(n_id_fixed * target_ratio / (1 - target_ratio))
+    
+    # Safety Check: strict logic should prevent this, but good for debugging
+    if n_ood_needed > max_ood_avail:
+        print(f"[Warning] Mathematical impossibility! Needed {n_ood_needed} OOD but only have {max_ood_avail}.")
+        n_ood_needed = max_ood_avail 
+
+    if n_ood_needed > 0:
+        # Randomly sample the required OOD data
+        ood_indices = np.random.choice(max_ood_avail, n_ood_needed, replace=False)
+        current_ood_data = ood_data[ood_indices]
+
+    mixed_data = np.concatenate([fixed_id_data, current_ood_data])
+    
+    print(f"[Current Experiment] Ratio: {target_ratio} | ID: {n_id_fixed} | OOD: {n_ood_needed} | Total: {len(mixed_data)}")
+        
+    # Return mixed data, indices of ID (to retrieve correct GT), and OOD data
+    return mixed_data, fixed_id_indices, current_ood_data
+
+
+
+
 def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', include_lb_to_ulb=True):
     
     data_dir = os.path.join(data_dir, name.lower())
@@ -69,6 +120,28 @@ def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', inclu
                                                                 lb_imbalance_ratio=args.lb_imb_ratio,
                                                                 ulb_imbalance_ratio=args.ulb_imb_ratio,
                                                                 include_lb_to_ulb=include_lb_to_ulb)
+
+    if hasattr(args, 'ood_data_path') and args.ood_data_path is not None:
+        print(f"Loading OOD data from: {args.ood_data_path}")
+        ood_data = np.load(args.ood_data_path)
+
+        if ood_data.shape[1:] != ulb_data.shape[1:]:
+            print(f"[Warning] OOD shape {ood_data.shape} differs from ID shape {ulb_data.shape}")
+
+        mixed_data, id_indices, ood_content = mix_data_ressl_compliant(
+            ulb_data, 
+            ood_data, 
+            args.ood_ratio
+        )
+
+        ulb_data = mixed_data
+
+        id_targets_kept = ulb_targets[id_indices]
+        ood_targets = -1 * np.ones(len(ood_content), dtype=int)
+        ulb_targets = np.concatenate([id_targets_kept, ood_targets])
+        print(f"Applied OOD Ratio {args.ood_ratio}. Final Unlabeled Size: {len(ulb_data)}")
+
+
     
     lb_count = [0 for _ in range(num_classes)]
     ulb_count = [0 for _ in range(num_classes)]
