@@ -6,6 +6,7 @@ import json
 import torchvision
 import numpy as np
 import math
+import torch
 
 from torchvision import transforms
 from .datasetbase import BasicDataset
@@ -140,6 +141,97 @@ def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', inclu
         ood_targets = -1 * np.ones(len(ood_content), dtype=int)
         ulb_targets = np.concatenate([id_targets_kept, ood_targets])
         print(f"Applied OOD Ratio {args.ood_ratio}. Final Unlabeled Size: {len(ulb_data)}")
+
+        if hasattr(args, 'proxy_checkpoint') and args.proxy_checkpoint:
+            from vra_lib.transforms import get_dataset_stats
+            from vra_lib.features import load_model, compute_prototypes, extract_features, calculate_distance
+            from vra_lib.algorithm import generate_vrm_distribution, solve_optimal_threshold
+            from vra_lib.utils import set_seed, plot_cdf, analyze_and_save_results
+            print("\n" + "="*40)
+            print(" [VRA] Initializing Vicinal Reference Alignment...")
+            print("="*40)
+
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        
+            # 1. 取得 VRA 專用的 dataset stats (與訓練 Proxy model 時一致)
+            # 注意：這裡使用 args.dataset (或手動指定 'cifar100')，視你的 args 結構而定
+            vra_dataset_name = args.dataset if hasattr(args, 'dataset') else 'cifar100'
+            img_size_vra, mean_vra, std_vra = get_dataset_stats(vra_dataset_name)
+            
+            # 2. 載入 Proxy Model
+            # 假設 args 裡有 model_arch，如果沒有，請在這裡指定預設值，例如 'vit_small_patch2_32'
+            arch = args.model_arch if hasattr(args, 'model_arch') else 'vit_small_patch2_32'
+            print(f" [VRA] Loading Proxy Model: {arch} from {args.proxy_checkpoint}")
+            
+            proxy_model = load_model(
+                arch, 
+                num_classes=num_classes, 
+                checkpoint_path=args.proxy_checkpoint, 
+                device=device
+            )
+
+            # 3. 計算 Prototypes (利用 Labeled Data)
+            print(" [VRA] Computing Prototypes from Labeled Data...")
+            prototypes = compute_prototypes(
+                proxy_model, 
+                lb_data,      # 這是原始影像 (N, H, W, C)
+                lb_targets,   # 對應標籤
+                img_size_vra, 
+                mean_vra, 
+                std_vra, 
+                num_classes, 
+                device
+            )
+
+            # 4. 生成 VRM Reference Distribution (In-Distribution 參考曲線)
+            print(" [VRA] Generating VRM Reference Distribution...")
+            dist_ref = generate_vrm_distribution(
+                proxy_model, 
+                lb_data, 
+                prototypes, 
+                img_size_vra, 
+                mean_vra, 
+                std_vra, 
+                k=50,             # 可視情況調整，或從 args 傳入
+                device=device
+            )
+
+            # 5. 計算 Unlabeled Data 的距離 (包含 ID 和 OOD)
+            print(f" [VRA] Extracting features for {len(ulb_data)} unlabeled samples...")
+            feats_unlabeled = extract_features(
+                proxy_model, 
+                ulb_data, 
+                img_size_vra, 
+                mean_vra, 
+                std_vra, 
+                device=device
+            )
+            dist_unlabeled = calculate_distance(feats_unlabeled, prototypes, device=device)
+
+            # 6. 求解最佳閾值 (Wasserstein Distance)
+            best_tau, min_wd, _ = solve_optimal_threshold(dist_ref, dist_unlabeled)
+            
+            # 7. 執行篩選
+            kept_indices = dist_unlabeled <= best_tau
+            num_kept = np.sum(kept_indices)
+            
+            print(f" [VRA] Result: Threshold={best_tau:.4f}, MinWD={min_wd:.4f}")
+            print(f" [VRA] Filtering: Kept {num_kept} / {len(ulb_data)} samples ({num_kept/len(ulb_data):.2%})")
+
+            analysis_save_path = os.path.join(args.save_dir, args.save_name, 'vra_analysis.txt')
+            analyze_and_save_results(kept_indices, ulb_targets, analysis_save_path, best_tau, min_wd)
+            save_path = os.path.join(args.save_dir, args.save_name, 'vra_cdf.png')
+            plot_cdf({'Reference': dist_ref, 'Unlabeled': dist_unlabeled, 'Filtered': dist_unlabeled[kept_indices]}, best_tau, save_path)
+
+            # 更新 Unlabeled Data
+            ulb_data = ulb_data[kept_indices]
+            ulb_targets = ulb_targets[kept_indices]
+            
+            print("="*40 + "\n")
+        
+        else:
+            print("[Warning] No checkpoint provided in args. VRA skipped.")
+            
 
 
     
