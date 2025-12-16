@@ -85,7 +85,21 @@ class UASD(AlgorithmBase):
         # Store current prediction into epoch bank (detached)
         probs_x_ulb = torch.softmax(logits_x_ulb, dim=1)
         with torch.no_grad():
-            self.epoch_pslab[idx_ulb] = probs_x_ulb.detach()
+            # self.epoch_pslab[idx_ulb] = probs_x_ulb.detach()
+            # [修正] 使用 EMA 即時更新，不依賴 Epoch 結束的全局平均
+            # momentum 可以設 0.9 或更低，代表歷史權重
+            momentum = 0.9 
+            
+            # 為了避免初始化為 0 的問題，如果是第一次更新(值為0)，直接覆寫
+            is_empty = (self.pslab[idx_ulb].sum(dim=1) == 0)
+            
+            # 更新非空的部分 (EMA)
+            if not is_empty.all():
+                self.pslab[idx_ulb[~is_empty]] = momentum * self.pslab[idx_ulb[~is_empty]] + (1 - momentum) * probs_x_ulb[~is_empty].detach()
+            
+            # 更新空的部分 (直接覆寫)
+            if is_empty.any():
+                self.pslab[idx_ulb[is_empty]] = probs_x_ulb[is_empty].detach()
 
         # 4. Target Generation (Self-Distillation)
         # Formula: target = (Historical * (epoch-1) + Current) / epoch
@@ -94,11 +108,15 @@ class UASD(AlgorithmBase):
         
         # Calculate the soft target used for loss
         # LAMDA: iter_unlab_pslab=(iter_unlab_pslab*(self._epoch-1)+ulb_logits.softmax(1))/self._epoch
-        target_probs = (current_pslab * (current_epoch - 1) + probs_x_ulb.detach()) / current_epoch
+        # target_probs = (current_pslab * (current_epoch - 1) + probs_x_ulb.detach()) / current_epoch
+        # [修正] 直接使用平滑後的 Memory Bank 作為 Target
+        target_probs = self.pslab[idx_ulb]
         
         # 5. Masking
         max_probs, _ = torch.max(target_probs, dim=-1)
         mask = max_probs.ge(self.threshold).float()
+        if current_epoch == 5:
+            breakpoint()
 
         # 6. Unsupervised Loss (Cross Entropy with Soft Targets)
         # LAMDA uses CrossEntropyLoss(reduction='none')(ulb_logits, target_probs)
@@ -130,10 +148,10 @@ class UASD(AlgorithmBase):
     def on_train_epoch_end(self):
         # Update the historical memory bank at the end of each epoch
         # LAMDA: self.pslab = ((self._epoch-1)*self.pslab + self.epoch_pslab)/self._epoch
-        current_epoch = self.epoch + 1
+        # current_epoch = self.epoch + 1
         
         # We update the global bank
-        self.pslab = ((current_epoch - 1) * self.pslab + self.epoch_pslab) / current_epoch
+        # self.pslab = ((current_epoch - 1) * self.pslab + self.epoch_pslab) / current_epoch
         
         # Reset the epoch accumulator for the next epoch? 
         # LAMDA doesn't seem to reset it explicitly to zeros, but overwrites it next time.
