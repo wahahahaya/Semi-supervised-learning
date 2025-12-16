@@ -218,9 +218,10 @@ def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', inclu
             print(f" [VRA] Result: Threshold={best_tau:.4f}, MinWD={min_wd:.4f}")
             print(f" [VRA] Filtering: Kept {num_kept} / {len(ulb_data)} samples ({num_kept/len(ulb_data):.2%})")
 
-            analysis_save_path = os.path.join(args.save_dir, args.save_name, 'vra_analysis.txt')
+            save_dir = os.path.join(args.save_dir, args.save_name)
+            analysis_save_path = os.path.join(save_dir, 'vra_analysis.txt')
             analyze_and_save_results(kept_indices, ulb_targets, analysis_save_path, best_tau, min_wd)
-            cdf_save_path = os.path.join(args.save_dir, args.save_name, 'vra_cdf.png')
+            cdf_save_path = os.path.join(save_dir, 'vra_cdf.png')
             plot_cdf({'Reference': dist_ref, 'Unlabeled': dist_unlabeled, 'Filtered': dist_unlabeled[kept_indices]}, best_tau, cdf_save_path)
 
             # 更新 Unlabeled Data
