@@ -220,8 +220,8 @@ def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', inclu
 
             analysis_save_path = os.path.join(args.save_dir, args.save_name, 'vra_analysis.txt')
             analyze_and_save_results(kept_indices, ulb_targets, analysis_save_path, best_tau, min_wd)
-            save_path = os.path.join(args.save_dir, args.save_name, 'vra_cdf.png')
-            plot_cdf({'Reference': dist_ref, 'Unlabeled': dist_unlabeled, 'Filtered': dist_unlabeled[kept_indices]}, best_tau, save_path)
+            cdf_save_path = os.path.join(args.save_dir, args.save_name, 'vra_cdf.png')
+            plot_cdf({'Reference': dist_ref, 'Unlabeled': dist_unlabeled, 'Filtered': dist_unlabeled[kept_indices]}, best_tau, cdf_save_path)
 
             # 更新 Unlabeled Data
             ulb_data = ulb_data[kept_indices]
