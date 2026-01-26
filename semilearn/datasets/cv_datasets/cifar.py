@@ -70,27 +70,6 @@ def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', inclu
                                                                 ulb_imbalance_ratio=args.ulb_imb_ratio,
                                                                 include_lb_to_ulb=include_lb_to_ulb)
     
-    if args.use_noise:
-        if args.use_filter:
-            noise_path = args.noise_path
-            ulb_data = np.load(f'{noise_path}_filtered_images.npy')
-            ulb_targets = np.load(f'{noise_path}_filtered_labels.npy').astype(int)
-
-            noise_name = f"{noise_path.split('/')[-1].split('.')[0]}"
-        else:
-            noise_path = args.noise_path 
-            noise_data = np.load(noise_path)
-            noise_number = args.noise_num
-            if noise_number == 0: # noise only
-                ulb_data = noise_data
-                ulb_targets = -1 * np.ones(noise_data.shape[0])
-            else:
-                ulb_data = np.concatenate([ulb_data, noise_data[:noise_number]], axis=0)
-                ulb_targets = np.concatenate([ulb_targets, -1 * np.ones(noise_number)], axis=0).astype(int)
-
-            noise_name = f"{noise_path.split('/')[-1].split('.')[0]}_{noise_number}"
-
-    noise_name = "None"
     lb_count = [0 for _ in range(num_classes)]
     ulb_count = [0 for _ in range(num_classes)]
     for c in lb_targets:
@@ -103,8 +82,7 @@ def get_cifar(args, alg, name, num_labels, num_classes, data_dir='./data', inclu
 
     save_dir = os.path.join(args.save_dir, args.save_name)
 
-    with open(os.path.join(save_dir, f'{noise_name}.txt'), 'w') as f:
-        f.write("Dataset: {}\n".format(noise_name))
+    with open(os.path.join(save_dir, f'calculate.txt'), 'w') as f:
         f.write("lb_count: {}\n".format(lb_count))
         f.write("ulb_count: {}\n".format(ulb_count + [(ulb_targets == -1).sum()]))
         f.write("OOD unlabeled images: {}\n".format((ulb_targets == -1).sum()))

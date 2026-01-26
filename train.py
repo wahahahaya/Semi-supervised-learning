@@ -187,20 +187,6 @@ def get_config():
     parser.add_argument("--max_length_seconds", type=float, default=4.0)
     parser.add_argument("--sample_rate", type=int, default=16000)
 
-    ## add noise dataset
-    parser.add_argument(
-        "--use_noise", type=str2bool, default=False, help="use noise dataset"
-    )
-    parser.add_argument(
-        "--noise_path", type=str, default="", help="path to noise dataset"
-    )
-    parser.add_argument(
-        "--noise_num", type=int, default=0, help="number of noise samples"
-    )
-    parser.add_argument(
-        "--use_filter", type=str2bool, default=False, help="use filtered noise dataset"
-    )
-
     """
     multi-GPUs & Distributed Training
     """
